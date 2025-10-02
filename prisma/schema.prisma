@@ -1,0 +1,438 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// EVENT STORE (Event Sourcing)
+// ============================================
+
+model Event {
+  id          String   @id @default(uuid())
+  eventId     String   @unique @map("event_id")
+  aggregateId String   @map("aggregate_id")
+  aggregateType String @map("aggregate_type") // Payment, Subscription, Attendance
+  eventType   String   @map("event_type")     // PaymentCreated, PaymentSucceeded, etc
+  eventData   Json     @map("event_data")     // Event payload completo
+  metadata    Json?                            // userId, academyId, ip, etc
+  version     Int                              // Versão do aggregate (concorrência otimista)
+  occurredAt  DateTime @map("occurred_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([aggregateId, version])
+  @@index([aggregateType])
+  @@index([eventType])
+  @@index([occurredAt])
+  @@map("events")
+}
+
+// ============================================
+// SNAPSHOTS (Performance - opcional)
+// ============================================
+
+model Snapshot {
+  id            String   @id @default(uuid())
+  aggregateId   String   @unique @map("aggregate_id")
+  aggregateType String   @map("aggregate_type")
+  version       Int                              // Última versão incluída no snapshot
+  data          Json                             // Estado completo do aggregate
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([aggregateId])
+  @@map("snapshots")
+}
+
+// ============================================
+// USERS & AUTH
+// ============================================
+
+model User {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  name      String
+  password  String
+  phone     String?
+  avatar    String?
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Relacionamentos
+  academyUsers    AcademyUser[]
+  subscriptions   Subscription[]
+  attendances     Attendance[]
+  deviceTokens    DeviceToken[]
+  createdPayments Payment[]       @relation("PaymentCreatedBy")
+
+  @@map("users")
+}
+
+// ============================================
+// ACADEMIES (Multi-tenant)
+// ============================================
+
+model Academy {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?
+  logo        String?
+  phone       String?
+  email       String?
+  website     String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  // Endereço com geocoding
+  street       String?
+  number       String?
+  complement   String?
+  neighborhood String?
+  city         String?
+  state        String?
+  zipCode      String?  @map("zip_code")
+  country      String?  @default("BR")
+  latitude     Float?
+  longitude    Float?
+  geohash      String?
+
+  // Relacionamentos
+  academyUsers  AcademyUser[]
+  martialArts   AcademyMartialArt[]
+  plans         Plan[]
+  subscriptions Subscription[]
+  attendances   Attendance[]
+  payments      Payment[]
+
+  @@map("academies")
+}
+
+model AcademyUser {
+  id        String   @id @default(uuid())
+  role      UserRole @default(MEMBER)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  userId    String @map("user_id")
+  academyId String @map("academy_id")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  academy Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, academyId])
+  @@map("academy_users")
+}
+
+enum UserRole {
+  OWNER
+  INSTRUCTOR
+  MEMBER
+  STAFF
+}
+
+// ============================================
+// MARTIAL ARTS & BELT RANKS
+// ============================================
+
+model MartialArt {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  icon        String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  beltRanks          BeltRank[]
+  academyMartialArts AcademyMartialArt[]
+  plans              Plan[]
+
+  @@map("martial_arts")
+}
+
+model AcademyMartialArt {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now()) @map("created_at")
+
+  academyId    String @map("academy_id")
+  martialArtId String @map("martial_art_id")
+
+  academy    Academy    @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  martialArt MartialArt @relation(fields: [martialArtId], references: [id], onDelete: Cascade)
+
+  @@unique([academyId, martialArtId])
+  @@map("academy_martial_arts")
+}
+
+model BeltRank {
+  id          String    @id @default(uuid())
+  name        String
+  color       String?
+  order       Int
+  description String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  martialArtId String @map("martial_art_id")
+
+  martialArt MartialArt @relation(fields: [martialArtId], references: [id], onDelete: Cascade)
+
+  @@unique([martialArtId, order])
+  @@map("belt_ranks")
+}
+
+// ============================================
+// PLANS
+// ============================================
+
+model Plan {
+  id            String       @id @default(uuid())
+  name          String
+  description   String?
+  price         Int
+  currency      String       @default("BRL")
+  intervalType  IntervalType @map("interval_type")
+  intervalCount Int          @default(1) @map("interval_count")
+  isActive      Boolean      @default(true) @map("is_active")
+  trialDays     Int?         @map("trial_days")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+  deletedAt     DateTime?    @map("deleted_at")
+
+  academyId    String @map("academy_id")
+  martialArtId String @map("martial_art_id")
+
+  academy       Academy        @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  martialArt    MartialArt     @relation(fields: [martialArtId], references: [id], onDelete: Cascade)
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+enum IntervalType {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+// ============================================
+// SUBSCRIPTIONS (READ MODEL - reconstruído de eventos)
+// ============================================
+
+model Subscription {
+  id                 String             @id @default(uuid())
+  status             SubscriptionStatus @default(PENDING)
+  startDate          DateTime?          @map("start_date")
+  endDate            DateTime?          @map("end_date")
+  canceledAt         DateTime?          @map("canceled_at")
+  cancellationReason String?            @map("cancellation_reason")
+
+  // Stripe Integration
+  stripeCustomerId     String? @map("stripe_customer_id")
+  stripeSubscriptionId String? @unique @map("stripe_subscription_id")
+
+  currentPeriodStart DateTime? @map("current_period_start")
+  currentPeriodEnd   DateTime? @map("current_period_end")
+
+  // Event Sourcing
+  version Int @default(0) // Versão do aggregate
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  userId    String @map("user_id")
+  planId    String @map("plan_id")
+  academyId String @map("academy_id")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan     Plan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+  academy  Academy   @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  payments Payment[]
+
+  @@map("subscriptions")
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+  TRIALING
+}
+
+// ============================================
+// PAYMENTS (READ MODEL - reconstruído de eventos)
+// ============================================
+
+model Payment {
+  id            String        @id @default(uuid())
+  amount        Int
+  currency      String        @default("BRL")
+  status        PaymentStatus @default(PENDING)
+  paymentMethod String?       @map("payment_method")
+
+  paidAt DateTime? @map("paid_at")
+
+  // Stripe Integration
+  stripePaymentIntentId String? @unique @map("stripe_payment_intent_id")
+  stripeInvoiceId       String? @map("stripe_invoice_id")
+
+  failureReason String? @map("failure_reason")
+  receiptUrl    String? @map("receipt_url")
+
+  // Event Sourcing
+  version Int @default(0) // Versão do aggregate
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  subscriptionId String @map("subscription_id")
+  academyId      String @map("academy_id")
+  createdBy      String @map("created_by")
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  academy      Academy      @relation(fields: [academyId], references: [id], onDelete: Cascade)
+  user         User         @relation("PaymentCreatedBy", fields: [createdBy], references: [id])
+
+  @@map("payments")
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  CANCELED
+}
+
+// ============================================
+// ATTENDANCE (READ MODEL - reconstruído de eventos)
+// ============================================
+
+model Attendance {
+  id         String    @id @default(uuid())
+  checkInAt  DateTime  @default(now()) @map("check_in_at")
+  checkOutAt DateTime? @map("check_out_at")
+  notes      String?
+
+  // Event Sourcing
+  version Int @default(0) // Versão do aggregate
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  userId    String @map("user_id")
+  academyId String @map("academy_id")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  academy Academy @relation(fields: [academyId], references: [id], onDelete: Cascade)
+
+  @@index([userId, academyId])
+  @@index([checkInAt])
+  @@map("attendances")
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+model DeviceToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  platform  Platform
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  userId String @map("user_id")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("device_tokens")
+}
+
+enum Platform {
+  IOS
+  ANDROID
+  WEB
+}
+
+model NotificationLog {
+  id            String             @id @default(uuid())
+  title         String
+  body          String
+  data          Json?
+  status        NotificationStatus @default(PENDING)
+  sentAt        DateTime?          @map("sent_at")
+  failureReason String?            @map("failure_reason")
+
+  oneSignalId String? @map("onesignal_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  userId String? @map("user_id")
+
+  @@index([userId])
+  @@index([status])
+  @@map("notification_logs")
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  DELIVERED
+  OPENED
+}
+
+// ============================================
+// PROJECTIONS (Materialized Views para Analytics)
+// ============================================
+
+model RevenueProjection {
+  id        String   @id @default(uuid())
+  academyId String   @map("academy_id")
+  period    DateTime // Dia/Mês/Ano
+  periodType String  @map("period_type") // DAILY, MONTHLY, YEARLY
+  
+  totalRevenue    Int @map("total_revenue")      // Total em centavos
+  totalPayments   Int @map("total_payments")     // Quantidade
+  successfulPayments Int @map("successful_payments")
+  failedPayments  Int @map("failed_payments")
+  
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([academyId, period, periodType])
+  @@index([academyId])
+  @@index([period])
+  @@map("revenue_projections")
+}
+
+model AttendanceProjection {
+  id        String   @id @default(uuid())
+  academyId String   @map("academy_id")
+  period    DateTime // Dia/Mês/Ano
+  periodType String  @map("period_type")
+  
+  totalCheckIns    Int @map("total_check_ins")
+  uniqueUsers      Int @map("unique_users")
+  averageDuration  Int? @map("average_duration") // Minutos
+  
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([academyId, period, periodType])
+  @@index([academyId])
+  @@index([period])
+  @@map("attendance_projections")
+}

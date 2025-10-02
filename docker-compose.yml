@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: gym-attendance-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gym_attendance
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Redis (adicionar depois para jobs)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: gym-attendance-redis
+  #   restart: always
+  #   ports:
+  #     - '6379:6379'
+
+volumes:
+  postgres_data:
