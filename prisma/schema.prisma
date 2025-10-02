@@ -1,4 +1,3 @@
-// prisma/schema.prisma
 
 generator client {
   provider = "prisma-client-js"
@@ -9,19 +8,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============================================
-// EVENT STORE (Event Sourcing)
-// ============================================
 
 model Event {
   id          String   @id @default(uuid())
   eventId     String   @unique @map("event_id")
   aggregateId String   @map("aggregate_id")
-  aggregateType String @map("aggregate_type") // Payment, Subscription, Attendance
-  eventType   String   @map("event_type")     // PaymentCreated, PaymentSucceeded, etc
-  eventData   Json     @map("event_data")     // Event payload completo
-  metadata    Json?                            // userId, academyId, ip, etc
-  version     Int                              // Versão do aggregate (concorrência otimista)
+  aggregateType String @map("aggregate_type") 
+  eventType   String   @map("event_type")    
+  eventData   Json     @map("event_data")   
+  metadata    Json?                   
+  version     Int                        
   occurredAt  DateTime @map("occurred_at")
   createdAt   DateTime @default(now()) @map("created_at")
 
@@ -31,26 +27,18 @@ model Event {
   @@index([occurredAt])
   @@map("events")
 }
-
-// ============================================
-// SNAPSHOTS (Performance - opcional)
-// ============================================
-
 model Snapshot {
   id            String   @id @default(uuid())
   aggregateId   String   @unique @map("aggregate_id")
   aggregateType String   @map("aggregate_type")
-  version       Int                              // Última versão incluída no snapshot
-  data          Json                             // Estado completo do aggregate
+  version       Int                            
+  data          Json                            
   createdAt     DateTime @default(now()) @map("created_at")
 
   @@index([aggregateId])
   @@map("snapshots")
 }
 
-// ============================================
-// USERS & AUTH
-// ============================================
 
 model User {
   id        String    @id @default(uuid())
@@ -63,7 +51,6 @@ model User {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  // Relacionamentos
   academyUsers    AcademyUser[]
   subscriptions   Subscription[]
   attendances     Attendance[]
@@ -73,9 +60,6 @@ model User {
   @@map("users")
 }
 
-// ============================================
-// ACADEMIES (Multi-tenant)
-// ============================================
 
 model Academy {
   id          String    @id @default(uuid())
@@ -90,7 +74,6 @@ model Academy {
   updatedAt   DateTime  @updatedAt @map("updated_at")
   deletedAt   DateTime? @map("deleted_at")
 
-  // Endereço com geocoding
   street       String?
   number       String?
   complement   String?
@@ -103,7 +86,6 @@ model Academy {
   longitude    Float?
   geohash      String?
 
-  // Relacionamentos
   academyUsers  AcademyUser[]
   martialArts   AcademyMartialArt[]
   plans         Plan[]
@@ -138,9 +120,6 @@ enum UserRole {
   STAFF
 }
 
-// ============================================
-// MARTIAL ARTS & BELT RANKS
-// ============================================
 
 model MartialArt {
   id          String    @id @default(uuid())
@@ -190,10 +169,6 @@ model BeltRank {
   @@map("belt_ranks")
 }
 
-// ============================================
-// PLANS
-// ============================================
-
 model Plan {
   id            String       @id @default(uuid())
   name          String
@@ -224,9 +199,6 @@ enum IntervalType {
   YEARLY
 }
 
-// ============================================
-// SUBSCRIPTIONS (READ MODEL - reconstruído de eventos)
-// ============================================
 
 model Subscription {
   id                 String             @id @default(uuid())
@@ -236,15 +208,13 @@ model Subscription {
   canceledAt         DateTime?          @map("canceled_at")
   cancellationReason String?            @map("cancellation_reason")
 
-  // Stripe Integration
   stripeCustomerId     String? @map("stripe_customer_id")
   stripeSubscriptionId String? @unique @map("stripe_subscription_id")
 
   currentPeriodStart DateTime? @map("current_period_start")
   currentPeriodEnd   DateTime? @map("current_period_end")
 
-  // Event Sourcing
-  version Int @default(0) // Versão do aggregate
+  version Int @default(0) 
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -271,9 +241,6 @@ enum SubscriptionStatus {
   TRIALING
 }
 
-// ============================================
-// PAYMENTS (READ MODEL - reconstruído de eventos)
-// ============================================
 
 model Payment {
   id            String        @id @default(uuid())
@@ -291,8 +258,7 @@ model Payment {
   failureReason String? @map("failure_reason")
   receiptUrl    String? @map("receipt_url")
 
-  // Event Sourcing
-  version Int @default(0) // Versão do aggregate
+  version Int @default(0) 
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -316,9 +282,6 @@ enum PaymentStatus {
   CANCELED
 }
 
-// ============================================
-// ATTENDANCE (READ MODEL - reconstruído de eventos)
-// ============================================
 
 model Attendance {
   id         String    @id @default(uuid())
@@ -343,9 +306,6 @@ model Attendance {
   @@map("attendances")
 }
 
-// ============================================
-// NOTIFICATIONS
-// ============================================
 
 model DeviceToken {
   id        String   @id @default(uuid())
@@ -396,18 +356,15 @@ enum NotificationStatus {
   OPENED
 }
 
-// ============================================
-// PROJECTIONS (Materialized Views para Analytics)
-// ============================================
 
 model RevenueProjection {
   id        String   @id @default(uuid())
   academyId String   @map("academy_id")
   period    DateTime // Dia/Mês/Ano
-  periodType String  @map("period_type") // DAILY, MONTHLY, YEARLY
+  periodType String  @map("period_type") 
   
-  totalRevenue    Int @map("total_revenue")      // Total em centavos
-  totalPayments   Int @map("total_payments")     // Quantidade
+  totalRevenue    Int @map("total_revenue")      
+  totalPayments   Int @map("total_payments") 
   successfulPayments Int @map("successful_payments")
   failedPayments  Int @map("failed_payments")
   
@@ -427,7 +384,7 @@ model AttendanceProjection {
   
   totalCheckIns    Int @map("total_check_ins")
   uniqueUsers      Int @map("unique_users")
-  averageDuration  Int? @map("average_duration") // Minutos
+  averageDuration  Int? @map("average_duration") 
   
   updatedAt DateTime @updatedAt @map("updated_at")
 
