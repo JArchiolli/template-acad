@@ -56,10 +56,24 @@ model User {
   attendances     Attendance[]
   deviceTokens    DeviceToken[]
   createdPayments Payment[]       @relation("PaymentCreatedBy")
+  refreshTokens   UserRefreshToken[]  
 
   @@map("users")
 }
+model UserRefreshToken {
+  id         String   @id @default(uuid())
+  userId     String
+  token      String   @unique 
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  revokedAt  DateTime?
 
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("user_refresh_tokens")
+}
 
 model Academy {
   id          String    @id @default(uuid())
